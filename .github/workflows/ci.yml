@@ -171,14 +171,18 @@ jobs:
           mkdir -p "$RUNNER_TEMP/secureship-zap"
           cp .zap/rules.tsv "$RUNNER_TEMP/secureship-zap/rules.tsv"
 
+          # Allow the default ZAP container user to write scan outputs.
+          chmod 777 "$RUNNER_TEMP/secureship-zap"
+          chmod 644 "$RUNNER_TEMP/secureship-zap/rules.tsv"
+
           docker run --rm \
             --network host \
-            --user "$(id -u):$(id -g)" \
             -v "$RUNNER_TEMP/secureship-zap:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
             -t http://127.0.0.1:8000/health \
             -m 1 \
+            -d \
             -c rules.tsv \
             -r zap-report.html \
             -J zap-report.json
