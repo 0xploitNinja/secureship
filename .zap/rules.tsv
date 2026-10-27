@@ -1,0 +1,2 @@
+10049	INFO	Non-Storable Content. Expected because responses use no-store.
+10021	FAIL	X-Content-Type-Options Header Missing.

@@ -97,10 +97,10 @@ jobs:
             git /repo --redact --exit-code 1
 
   build:
-    name: Docker build, vulnerability report, and smoke test
+    name: Docker build, container scan, smoke test, and DAST
     needs: [test, sast, sca, secrets]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -119,8 +119,8 @@ jobs:
       - name: Export image for security scanning
         run: docker save -o "$RUNNER_TEMP/secureship-image.tar" secureship:ci
 
-      # Reporting only: vulnerability findings do not block this job.
-      # Scanner execution errors still fail the step.
+      # Vulnerability findings are reporting only.
+      # Scanner execution errors still fail this step.
       - name: Report container vulnerabilities with Trivy
         run: |
           docker run --rm \
@@ -165,6 +165,34 @@ jobs:
       - name: Verify non-root container user
         run: |
           test "$(docker exec secureship-api id -u)" = "10001"
+
+      - name: Run ZAP baseline DAST scan
+        run: |
+          mkdir -p "$RUNNER_TEMP/secureship-zap"
+          cp .zap/rules.tsv "$RUNNER_TEMP/secureship-zap/rules.tsv"
+
+          docker run --rm \
+            --network host \
+            --user "$(id -u):$(id -g)" \
+            -v "$RUNNER_TEMP/secureship-zap:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://127.0.0.1:8000/health \
+            -m 1 \
+            -c rules.tsv \
+            -r zap-report.html \
+            -J zap-report.json
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zap-reports
+          path: |
+            ${{ runner.temp }}/secureship-zap/zap-report.html
+            ${{ runner.temp }}/secureship-zap/zap-report.json
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Show logs and remove container
         if: always()
