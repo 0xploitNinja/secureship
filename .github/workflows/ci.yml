@@ -97,10 +97,10 @@ jobs:
             git /repo --redact --exit-code 1
 
   build:
-    name: Docker build and smoke test
+    name: Docker build, vulnerability report, and smoke test
     needs: [test, sast, sca, secrets]
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -115,6 +115,21 @@ jobs:
 
       - name: Build application image
         run: docker build -t secureship:ci .
+
+      - name: Export image for security scanning
+        run: docker save -o "$RUNNER_TEMP/secureship-image.tar" secureship:ci
+
+      # Reporting only: vulnerability findings do not block this job.
+      # Scanner execution errors still fail the step.
+      - name: Report container vulnerabilities with Trivy
+        run: |
+          docker run --rm \
+            -v "$RUNNER_TEMP/secureship-image.tar:/scan/image.tar:ro" \
+            aquasec/trivy:0.76.1 \
+            image --input /scan/image.tar \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --exit-code 0
 
       - name: Start application container
         run: |
@@ -139,6 +154,7 @@ jobs:
                           raise ValueError("Unexpected HTTP status")
                       if json.load(response) != {"status": "ok"}:
                           raise ValueError("Unexpected health response")
+
                   print("Container health check passed")
                   break
               except (OSError, ValueError):
